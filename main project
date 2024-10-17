@@ -1,0 +1,77 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import MinMaxScaler
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense, Dropout
+from sklearn.metrics import mean_squared_error
+
+# Load traffic data (replace with your dataset)
+# Assume the dataset has a 'Date' column and a 'Traffic' column
+data = pd.read_csv('traffic_data.csv', parse_dates=['Date'], index_col='Date')
+
+# Plot the traffic data
+plt.figure(figsize=(10, 6))
+plt.plot(data['Traffic'])
+plt.title('Traffic Data')
+plt.xlabel('Date')
+plt.ylabel('Traffic Count')
+plt.show()
+
+# Preprocess the data
+# Scaling the data for LSTM model
+scaler = MinMaxScaler(feature_range=(0, 1))
+scaled_data = scaler.fit_transform(data['Traffic'].values.reshape(-1, 1))
+
+# Prepare the dataset for LSTM (e.g., using 60 timesteps for each prediction)
+def prepare_data(data, time_steps):
+    X, y = [], []
+    for i in range(time_steps, len(data)):
+        X.append(data[i - time_steps:i, 0])
+        y.append(data[i, 0])
+    return np.array(X), np.array(y)
+
+time_steps = 60
+X, y = prepare_data(scaled_data, time_steps)
+
+# Reshape for LSTM input (samples, time steps, features)
+X = np.reshape(X, (X.shape[0], X.shape[1], 1))
+
+# Split the dataset into training and testing sets
+split = int(0.8 * len(X))
+X_train, X_test = X[:split], X[split:]
+y_train, y_test = y[:split], y[split:]
+
+# Build the LSTM model
+model = Sequential()
+model.add(LSTM(units=50, return_sequences=True, input_shape=(X_train.shape[1], 1)))
+model.add(Dropout(0.2))
+model.add(LSTM(units=50, return_sequences=False))
+model.add(Dropout(0.2))
+model.add(Dense(units=1))  # Predicting a single value (traffic count)
+
+model.compile(optimizer='adam', loss='mean_squared_error')
+
+# Train the model
+model.fit(X_train, y_train, epochs=10, batch_size=32)
+
+# Make predictions
+predictions = model.predict(X_test)
+
+# Inverse transform to get back to original scale
+predictions = scaler.inverse_transform(predictions)
+y_test_scaled = scaler.inverse_transform(y_test.reshape(-1, 1))
+
+# Evaluate the model
+rmse = np.sqrt(mean_squared_error(y_test_scaled, predictions))
+print(f'Root Mean Squared Error: {rmse}')
+
+# Plot the results
+plt.figure(figsize=(10, 6))
+plt.plot(data.index[split + time_steps:], y_test_scaled, color='blue', label='Actual Traffic')
+plt.plot(data.index[split + time_steps:], predictions, color='red', label='Predicted Traffic')
+plt.title('Traffic Forecasting using LSTM')
+plt.xlabel('Date')
+plt.ylabel('Traffic Count')
+plt.legend()
+plt.show()
